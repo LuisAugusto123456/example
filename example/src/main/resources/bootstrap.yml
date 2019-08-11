@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: us-core-example
+  cloud:
+    config:
+      name: us-core-example
+      uri:  ${APP_CONFIG_SERVER:http://localhost:8888}
+      label: ${APP_CONFIG_LABEL:master}

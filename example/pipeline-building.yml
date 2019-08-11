@@ -1,0 +1,26 @@
+trigger:
+  branches:
+    include:
+      - master
+      - refs/tags/*
+
+variables:
+  - group: us-core-${artifactId}
+  - group: generic-pipeline-registry
+  - name: ArtifactPath
+    value: '$(Build.SourcesDirectory)/target/application.jar'
+
+jobs:
+- template: azure-templates/building.yml
+  parameters:
+      jobName: 'BuildingDevMicroservice'
+      environment: 'build'
+      applicationRegistry: '$(ApplicationRegistryDev)'
+      applicationRepository: '$(ApplicationRepositoryDev)'
+
+- template: azure-templates/release.yml
+  parameters:
+      jobName: 'BuildingReleaseMicroservice'
+      environment: 'release'
+      applicationRegistry: '$(ApplicationRegistryPro)'
+      applicationRepository: '$(ApplicationRepositoryPro)'

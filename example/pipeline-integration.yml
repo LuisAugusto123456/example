@@ -1,0 +1,57 @@
+trigger:
+  branches:
+    include:
+      - master
+
+variables:
+  - group: us-core-${artifactId}
+  - group: generic-pipeline-sonarcloud
+
+jobs:
+- job: 'IntegrationJob'
+  displayName: 'Integration job'
+  pool:
+    vmImage: 'Ubuntu-16.04'
+  steps:
+  - task: Maven@3
+    displayName: 'Test, analyse and coverage'
+    inputs:
+      mavenPOMFile: 'pom.xml'
+      goals: 'test'
+      mavenOptions: '-Xmx512m'
+      checkstyleAnalysisEnabled: true
+      pmdAnalysisEnabled: true
+      findbugsAnalysisEnabled: true
+  - script: |
+      mvn jacoco:report
+    displayName: 'Generate jacoco report'
+  - task: PublishCodeCoverageResults@1
+    displayName: 'Publish code coverage'
+    inputs:
+      codeCoverageTool: 'JaCoCo'
+      summaryFileLocation: '$(Build.SourcesDirectory)/target/site/jacoco/jacoco.xml'
+      reportDirectory: '$(Build.SourcesDirectory)/target/site/jacoco'
+  - task: SonarCloudPrepare@1
+    displayName: 'Prepare quality scan'
+    inputs:
+      SonarCloud: '$(SonarCloudValue)'
+      organization: '$(SonarOrganization)'
+      configMode: 'manual'
+      cliProjectKey: '$(SonarProjectKey)'
+      cliProjectName: '$(SonarProjectName)'
+      cliSources: '.'
+      scannerMode: 'CLI'
+      extraProperties: |
+        sonar.language=java
+        sonar.java.source=$(Build.SourcesDirectory)/src/main/java
+        sonar.java.binaries=$(Build.SourcesDirectory)/target/classes
+        sonar.exclusions=$(SonarProjectExclusions)
+        sonar.coverage.jacoco.xmlReportPaths=$(Build.SourcesDirectory)/target/site/jacoco/jacoco.xml      
+  - task: SonarCloudAnalyze@1
+    displayName: 'Analyze project quality'
+    inputs:
+      SonarCloud: '$(SonarCloudValue)'
+  - task: SonarCloudPublish@1
+    displayName: 'Publish quality scan'
+    inputs:
+      SonarCloud: '$(SonarCloudValue)'

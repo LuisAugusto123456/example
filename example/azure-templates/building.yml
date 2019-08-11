@@ -1,0 +1,69 @@
+parameters:
+  # job parameters
+  jobName: ''
+  environment: ''
+  # microservice parameters
+  applicationRegistry: ''
+  applicationRepository: ''
+
+jobs:
+  - job: '${{ parameters.jobName }}'
+    condition: eq(variables['Build.SourceBranch'], 'refs/heads/master')
+    displayName: 'Building microservice for ${{ parameters.environment }}'
+    pool:
+      vmImage: 'Ubuntu-16.04'
+    steps:
+    - script: mvn dependency:go-offline
+      displayName: 'Download dependencies'
+    - script: |
+        PROJECT_VERSION="$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)"
+        echo $PROJECT_VERSION
+        echo "##vso[task.setvariable variable=ArtifactVersion;isOutput=true]$PROJECT_VERSION"
+      name: metadata
+      displayName: 'Get project version'
+    - script: |
+        echo "build $(Build.BuildId)" >> /tmp/build.txt
+        echo "version $(metadata.ArtifactVersion)" >> /tmp/version.txt
+      displayName: 'Sing microservice with metadata'
+    - script:  mvn -B -DskipTests clean package
+      displayName: 'Build microservice'
+    - script: mv '$(Build.SourcesDirectory)/target/$(ApplicationArtifactId)-$(metadata.ArtifactVersion).jar' $(ArtifactPath)
+      displayName: 'Rename artifact to application.jar'
+    - script: |
+        echo "SemVer"
+        echo "Setting a build name ..."
+        SEMVER_REPLACE="$(metadata.ArtifactVersion)-build-$(Build.buildId)"
+        echo "Value in $SEMVER_REPLACE"
+        echo "##vso[task.setvariable variable=VersionPublish;isOutput=true]$SEMVER_REPLACE"
+      name: 'semverMetadata'
+      failOnStderr: true
+      displayName: 'Get project version'
+    - task: Docker@2
+      displayName: 'Build docker image'
+      inputs:
+        containerRegistry: '${{ parameters.applicationRegistry }}'
+        repository: '${{ parameters.applicationRepository }}/$(ApplicationImage)'
+        command: 'build'
+        Dockerfile: 'Dockerfile'
+        tags: '$(semverMetadata.VersionPublish)'
+    - task: Docker@2
+      displayName: 'Registry login'
+      inputs:
+        containerRegistry: '${{ parameters.applicationRegistry }}'
+        command: 'login'
+    - task: Docker@2
+      displayName: 'Push docker image'
+      inputs:
+        containerRegistry: '${{ parameters.applicationRegistry }}'
+        repository: '${{ parameters.applicationRepository }}/$(ApplicationImage)'
+        command: 'push'
+        tags: '$(semverMetadata.VersionPublish)'
+    - task: Kubernetes@1
+      displayName: 'Deploy new image in K8S cluster'
+      inputs:
+        connectionType: 'Kubernetes Service Connection'
+        kubernetesServiceEndpoint: '$(KubernetesBuildingService)'
+        namespace: '$(KubernetesNamespace)'
+        command: 'set'
+        arguments: 'image $(KubernetesDeployment) $(KubernetesBuildingContainer):$(semverMetadata.VersionPublish)'
+        versionSpec: '$(KubernetesKubectlVersion)'
